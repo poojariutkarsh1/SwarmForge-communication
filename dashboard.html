@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwarmForge – Warehouse Swarm Communication</title>
+<style>
+  :root{
+    --bg:#0a1120; --panel:#111b30; --panel2:#16233d; --line:#25365a;
+    --text:#e6edf7; --dim:#8396b6; --cyan:#22d3ee; --green:#34d399;
+    --red:#f87171; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; color:var(--text); background-color:var(--bg);
+    font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+    background-image:
+      linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+    background-size:36px 36px;
+  }
+  header{text-align:center; padding:26px 12px 6px}
+  header h1{margin:0; font-size:2.2rem; letter-spacing:.35em; color:var(--cyan)}
+  header p{margin:6px 0 0; color:var(--dim); letter-spacing:.12em; font-size:.85rem; text-transform:uppercase}
+  .wrap{max-width:1100px; margin:18px auto 40px; padding:0 14px;
+        display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width:820px){ .wrap{grid-template-columns:1fr} }
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px}
+  .card h2{margin:0 0 12px; font-size:.78rem; letter-spacing:.2em; color:var(--dim); text-transform:uppercase}
+  .full{grid-column:1/-1}
+
+  /* ---- topology ---- */
+  .topo{display:flex; flex-direction:column; align-items:center}
+  .node{width:240px; text-align:center; background:var(--panel2); border:2px solid var(--line);
+        border-radius:12px; padding:12px 10px}
+  .node .name{font-weight:700; letter-spacing:.08em}
+  .node .sub{color:var(--dim); font-size:.8rem; margin:2px 0 8px}
+  .badge{font-weight:700; font-size:.9rem}
+  .dot{display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:6px; background:var(--red)}
+  .on .dot{background:var(--green); box-shadow:0 0 10px var(--green); animation:pulse 1.6s infinite}
+  .on{color:var(--green)} .off{color:var(--red)}
+  @keyframes pulse{50%{opacity:.45}}
+
+  .link{position:relative; width:240px; height:120px}
+  .link .line{position:absolute; left:50%; top:0; bottom:0; width:0; margin-left:-1px;
+              border-left:3px dashed var(--line)}
+  .link .packet{position:absolute; left:50%; top:0; width:18px; height:18px; margin-left:-9px;
+                border-radius:50%; opacity:0}
+  .link .label{position:absolute; left:calc(50% + 16px); top:50%; transform:translateY(-50%);
+               font-size:.8rem; letter-spacing:.12em; color:var(--dim); font-weight:700}
+  .link.cmd .line{border-left-color:var(--cyan)}
+  .link.cmd .label{color:var(--cyan)}
+  .link.cmd .packet{background:var(--cyan); box-shadow:0 0 14px var(--cyan); animation:down .9s ease-in-out forwards}
+  .link.ack .line{border-left-color:var(--green)}
+  .link.ack .label{color:var(--green)}
+  .link.ack .packet{background:var(--green); box-shadow:0 0 14px var(--green); animation:up .9s ease-in-out forwards}
+  .link.fail .line{border-left-color:var(--red)}
+  .link.fail .label{color:var(--red)}
+  @keyframes down{0%{top:0;opacity:1}90%{opacity:1}100%{top:calc(100% - 18px);opacity:0}}
+  @keyframes up{0%{top:calc(100% - 18px);opacity:1}90%{opacity:1}100%{top:0;opacity:0}}
+
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:.92rem; margin-top:14px;
+      border-top:1px solid var(--line); padding-top:12px}
+  .kv span:nth-child(odd){color:var(--dim)}
+  .kv span:nth-child(even){font-weight:600; text-align:right}
+
+  /* ---- buttons ---- */
+  .btns{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  button{font:inherit; font-weight:700; letter-spacing:.06em; padding:14px 8px; border-radius:10px;
+         border:1px solid var(--line); background:var(--panel2); color:var(--text); cursor:pointer;
+         transition:.15s}
+  button:hover:not(:disabled){border-color:var(--cyan); color:var(--cyan); transform:translateY(-1px)}
+  button:disabled{opacity:.4; cursor:not-allowed}
+  button.stop{grid-column:1/-1; border-color:#6b2c35; color:var(--red)}
+  button.stop:hover:not(:disabled){border-color:var(--red); color:var(--red)}
+
+  /* ---- flow ---- */
+  .big{font-size:1.35rem; font-weight:800; letter-spacing:.05em; margin:2px 0 14px; word-break:break-word}
+  .lbl{font-size:.72rem; letter-spacing:.18em; color:var(--dim); text-transform:uppercase}
+  .steps{display:flex; gap:8px; margin:6px 0 4px}
+  .step{flex:1; text-align:center; font-size:.72rem; padding:8px 4px; border-radius:8px;
+        border:1px solid var(--line); color:var(--dim); letter-spacing:.06em}
+  .step.done{color:var(--cyan); border-color:var(--cyan)}
+  .step.active{color:var(--amber); border-color:var(--amber); animation:pulse 1s infinite}
+  .step.ok{color:var(--green); border-color:var(--green)}
+  .step.bad{color:var(--red); border-color:var(--red)}
+  .ackbox{margin-top:12px; padding:10px; border-radius:10px; text-align:center; font-weight:800;
+          letter-spacing:.08em; border:1px dashed var(--line); color:var(--dim)}
+  .ackbox.wait{color:var(--amber); border-color:var(--amber)}
+  .ackbox.ok{color:var(--green); border-color:var(--green)}
+  .ackbox.bad{color:var(--red); border-color:var(--red)}
+
+  /* ---- stats ---- */
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; text-align:center}
+  .stat b{display:block; font-size:2rem}
+  .stat span{font-size:.72rem; letter-spacing:.15em; color:var(--dim); text-transform:uppercase}
+  .stat.g b{color:var(--green)} .stat.c b{color:var(--cyan)} .stat.r b{color:var(--red)}
+
+  /* ---- log ---- */
+  #log{max-height:290px; overflow-y:auto; font-family:ui-monospace,Consolas,monospace; font-size:.85rem}
+  .row{display:flex; gap:14px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,.04)}
+  .row .t{color:var(--dim); flex:none}
+  .row.c .m{color:var(--cyan)} .row.s .m{color:#93c5fd} .row.a .m{color:var(--green)}
+  .row.x .m{color:var(--amber)} .row.o .m{color:var(--green)}
+  .row.t .m,.row.f .m,.row.e .m{color:var(--red)}
+  .note{color:var(--dim); font-size:.78rem; text-align:center; margin:-20px 0 30px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SWARMFORGE</h1>
+  <p>Warehouse Swarm Communication Demo</p>
+</header>
+
+<div class="wrap">
+
+  <!-- TOPOLOGY -->
+  <div class="card">
+    <h2>Communication Path</h2>
+    <div class="topo">
+      <div class="node">
+        <div class="name">MASTER ESP8266</div>
+        <div class="sub">Role: MASTER</div>
+        <div class="badge off" id="masterBadge"><span class="dot"></span><span id="masterTxt">OFFLINE</span></div>
+      </div>
+
+      <div class="link" id="link">
+        <div class="line"></div>
+        <div class="packet"></div>
+        <div class="label" id="linkLabel">ESP-NOW</div>
+      </div>
+
+      <div class="node">
+        <div class="name">SLAVE ESP8266</div>
+        <div class="sub">Role: SLAVE</div>
+        <div class="badge off" id="slaveBadge"><span class="dot"></span><span id="slaveTxt">OFFLINE</span></div>
+      </div>
+    </div>
+
+    <div class="kv">
+      <span>Protocol</span>   <span>ESP-NOW</span>
+      <span>Connection</span> <span id="conn">—</span>
+    </div>
+  </div>
+
+  <!-- COMMAND CONTROL + FLOW -->
+  <div class="card">
+    <h2>Command Control</h2>
+    <div class="btns" id="btns"></div>
+  </div>
+
+  <div class="card">
+    <h2>Current Transaction</h2>
+    <div class="lbl">Current command</div>
+    <div class="big" id="lastCmd">—</div>
+    <div class="lbl">Slave status</div>
+    <div class="big" id="slaveState">—</div>
+
+    <div class="steps">
+      <div class="step" id="st1">COMMAND SENT</div>
+      <div class="step" id="st2">WAITING FOR ACK</div>
+      <div class="step" id="st3">ACK</div>
+    </div>
+    <div class="ackbox" id="ackbox">—</div>
+  </div>
+
+  <div class="card">
+    <h2>Packet Statistics</h2>
+    <div class="stats">
+      <div class="stat c"><b id="sSent">0</b><span>Commands Sent</span></div>
+      <div class="stat g"><b id="sAck">0</b><span>ACKs Received</span></div>
+      <div class="stat r"><b id="sFail">0</b><span>Failed</span></div>
+    </div>
+  </div>
+
+  <!-- EVENT LOG -->
+  <div class="card full">
+    <h2>Event Log (newest first)</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+/* ---------------------------------------------------------
+   The dashboard talks to the MASTER ESP8266 over HTTP.
+   Opened as a file (file://)  -> master is at 192.168.4.1
+   Your laptop must be connected to Wi-Fi "SwarmForge".
+--------------------------------------------------------- */
+const MASTER_URL = (location.protocol === 'file:') ? 'http://192.168.4.1' : '';
+
+const COMMANDS = [
+  ['MOVE FORWARD','MOVE_FORWARD'], ['MOVE BACKWARD','MOVE_BACKWARD'],
+  ['TURN LEFT','TURN_LEFT'],       ['TURN RIGHT','TURN_RIGHT'],
+  ['GO TO ZONE A','GO_TO_ZONE_A'], ['GO TO ZONE B','GO_TO_ZONE_B'],
+  ['STOP','STOP']
+];
+
+const $ = id => document.getElementById(id);
+let masterUp = null;          // null = unknown yet, true/false afterwards
+let state = {};
+let lastSeq = 0, firstPoll = true, polling = false;
+let logRows = [];
+const animQueue = []; let animRunning = false;
+
+/* ---------- buttons ---------- */
+COMMANDS.forEach(([label, cmd]) => {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.dataset.cmd = cmd;
+  if (cmd === 'STOP') b.className = 'stop';
+  b.onclick = () => sendCmd(cmd);
+  $('btns').appendChild(b);
+});
+
+async function sendCmd(cmd) {
+  if (!masterUp || state.state === 'WAITING') return;
+  setButtons(false);
+  try { await fetch(MASTER_URL + '/cmd?c=' + cmd, { cache: 'no-store' }); } catch (e) {}
+  pollSoon();
+}
+
+function setButtons(enabled) {
+  document.querySelectorAll('#btns button').forEach(b => b.disabled = !enabled);
+}
+
+/* ---------- link animation (driven by REAL events from the master) ---------- */
+function playNext() {
+  if (animRunning || !animQueue.length) return;
+  animRunning = true;
+  const kind = animQueue.shift();
+  $('link').className = 'link ' + kind;
+  $('linkLabel').textContent = { cmd: 'COMMAND ▼', ack: 'ACK ▲', fail: 'TIMEOUT ✗' }[kind];
+  setTimeout(() => {
+    $('link').className = 'link';
+    $('linkLabel').textContent = 'ESP-NOW';
+    animRunning = false;
+    playNext();
+  }, kind === 'fail' ? 1300 : 950);
+}
+
+/* ---------- event log ---------- */
+function addLog(type, msg) {
+  const t = new Date().toLocaleTimeString('en-GB');
+  logRows.unshift({ t, type, msg });          // newest first
+  if (logRows.length > 60) logRows.pop();
+}
+function renderLog() {
+  $('log').innerHTML = logRows.map(r =>
+    `<div class="row ${r.type}"><span class="t">${r.t}</span><span class="m">${r.msg}</span></div>`
+  ).join('');
+}
+function ingest(events, animate) {
+  if (events.length && events[events.length - 1].n < lastSeq) {   // master was restarted
+    lastSeq = 0; addLog('i', 'MASTER RESTARTED');
+  }
+  events.forEach(e => {
+    if (e.n > lastSeq) {
+      lastSeq = e.n;
+      addLog(e.t, e.m);
+      if (animate) {
+        if (e.t === 's') animQueue.push('cmd');
+        if (e.t === 'a') animQueue.push('ack');
+        if (e.t === 't') animQueue.push('fail');
+      }
+    }
+  });
+  playNext();
+  renderLog();
+}
+
+/* ---------- polling ---------- */
+async function poll() {
+  if (polling) return;
+  polling = true;
+  try {
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(MASTER_URL + '/status', { signal: ctl.signal, cache: 'no-store' });
+    clearTimeout(to);
+    state = await r.json();
+    if (masterUp === false) addLog('o', 'MASTER REACHABLE AGAIN');
+    masterUp = true;
+    ingest(state.events, !firstPoll);
+    firstPoll = false;
+  } catch (e) {
+    if (masterUp === true) { addLog('f', 'MASTER UNREACHABLE'); renderLog(); }
+    masterUp = false;
+  }
+  render();
+  polling = false;
+}
+function pollSoon() { setTimeout(poll, 60); }
+setInterval(poll, 400);
+poll();
+
+/* ---------- drawing ---------- */
+function setBadge(id, txtId, up) {
+  $(id).className = 'badge ' + (up ? 'on' : 'off');
+  $(txtId).textContent = up ? 'ONLINE' : 'OFFLINE';
+}
+
+function render() {
+  const up = masterUp === true;
+  const slaveUp = up && state.slaveOnline;
+
+  setBadge('masterBadge', 'masterTxt', up);
+  setBadge('slaveBadge', 'slaveTxt', slaveUp);
+
+  $('conn').textContent = !up ? 'MASTER NOT REACHABLE'
+                        : slaveUp ? 'CONNECTED' : 'SLAVE UNREACHABLE';
+  $('conn').style.color = slaveUp ? 'var(--green)' : 'var(--red)';
+
+  if (!up) {
+    setButtons(false);
+    $('ackbox').className = 'ackbox bad';
+    $('ackbox').textContent = 'Join Wi-Fi "SwarmForge" and keep the MASTER powered';
+    return;
+  }
+
+  $('lastCmd').textContent = state.lastCommand === 'NONE' ? '—' : state.lastCommand;
+  $('slaveState').textContent = slaveUp ? state.slaveStatus : 'UNREACHABLE';
+  $('slaveState').style.color = slaveUp ? '' : 'var(--red)';
+
+  $('sSent').textContent = state.sent;
+  $('sAck').textContent = state.acks;
+  $('sFail').textContent = state.failed;
+
+  const s = state.state;
+  setButtons(s !== 'WAITING');
+
+  ['st1','st2','st3'].forEach(id => $(id).className = 'step');
+  $('st3').textContent = 'ACK';
+  const box = $('ackbox');
+  if (s === 'WAITING') {
+    $('st1').className = 'step done'; $('st2').className = 'step active';
+    box.className = 'ackbox wait'; box.textContent = 'WAITING FOR ACK...';
+  } else if (s === 'ACKED') {
+    $('st1').className = 'step done'; $('st2').className = 'step done';
+    $('st3').className = 'step ok'; $('st3').textContent = 'ACK RECEIVED ✓';
+    box.className = 'ackbox ok'; box.textContent = 'ACK: ✓ RECEIVED';
+  } else if (s === 'TIMEOUT') {
+    $('st1').className = 'step done'; $('st2').className = 'step done';
+    $('st3').className = 'step bad'; $('st3').textContent = 'TIMEOUT ✗';
+    box.className = 'ackbox bad'; box.textContent = 'TIMEOUT ✗ — SLAVE NOT RESPONDING';
+  } else {
+    box.className = 'ackbox'; box.textContent = 'Ready — press a command';
+  }
+}
+render();
+</script>
+</body>
+</html>
